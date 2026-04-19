@@ -9,7 +9,8 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import precision_score, recall_score, f1_score
+from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix
+from sklearn.calibration import CalibratedClassifierCV
 
 
 def train_decision_tree(X_train, y_train, max_depth=5, random_state=42):
@@ -24,8 +25,10 @@ def train_decision_tree(X_train, y_train, max_depth=5, random_state=42):
     Returns:
         Fitted DecisionTreeClassifier.
     """
+    model = DecisionTreeClassifier(max_depth=max_depth, random_state=random_state)
+    model.fit(X_train, y_train)
+    return model
     # TODO: Create and fit a DecisionTreeClassifier
-    pass
 
 
 def get_feature_importances(model, feature_names):
@@ -38,12 +41,17 @@ def get_feature_importances(model, feature_names):
     Returns:
         Dictionary mapping feature name to importance value, sorted descending.
     """
+    importances = model.feature_importances_
+    pairs = list(zip(feature_names, importances))
+    pairs.sort(key=lambda x: x[1], reverse=True)
+
+    return {name: float(imp) for name, imp in pairs}
     # TODO: Extract importances and return as a sorted dictionary
-    pass
 
 
-def train_balanced_forest(X_train, y_train, X_test, y_test,
-                          n_estimators=100, random_state=42):
+def train_balanced_forest(
+    X_train, y_train, X_test, y_test, n_estimators=100, random_state=42
+):
     """Train a RandomForest with balanced class weights and return metrics.
 
     Args:
@@ -55,16 +63,39 @@ def train_balanced_forest(X_train, y_train, X_test, y_test,
     Returns:
         Dictionary with keys: 'precision', 'recall', 'f1'.
     """
+    b_model = RandomForestClassifier(
+        n_estimators=n_estimators, random_state=random_state, class_weight="balanced"
+    )
+    model = CalibratedClassifierCV(estimator=b_model, method="sigmoid", cv=3)
+    model.fit(X_train, y_train)
+    y_prob = model.predict_proba(X_test)[:, 1]
+    y_pred = (y_prob >= 0.25).astype(int)
+
+    print("The distribution of predicted :")
+    print(np.unique(y_pred, return_counts=True))
+    print("confusion_matrix :")
+    print(confusion_matrix(y_test, y_pred))
+    return {
+        "precision": precision_score(y_test, y_pred),
+        "recall": recall_score(y_test, y_pred),
+        "f1": f1_score(y_test, y_pred),
+    }
     # TODO: Train RandomForestClassifier with class_weight='balanced',
     #       predict on test set, compute and return metrics
-    pass
 
 
 if __name__ == "__main__":
     df = pd.read_csv("data/telecom_churn.csv")
-    features = ["tenure", "monthly_charges", "total_charges",
-                "num_support_calls", "senior_citizen", "has_partner",
-                "has_dependents", "contract_months"]
+    features = [
+        "tenure",
+        "monthly_charges",
+        "total_charges",
+        "num_support_calls",
+        "senior_citizen",
+        "has_partner",
+        "has_dependents",
+        "contract_months",
+    ]
     X = df[features]
     y = df["churned"]
     X_train, X_test, y_train, y_test = train_test_split(
